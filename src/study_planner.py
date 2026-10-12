@@ -1,174 +1,652 @@
-from datetime import datetime, timedelta
+"""AI-Based Study Planner - Rational Agent (IA1 -> IA2 Final Project)
+
+Covers:
+1. CSP timetable: variables, domains, constraints, backtracking, MRV, LCV,
+   forward checking and AC-3-style arc consistency.
+2. Knowledge/reasoning: prerequisite rules, forward chaining, inference trace,
+   and a simple uncertainty estimate.
+3. Applied/responsible AI: transparent explanations, fairness checks, and
+   privacy/accountability notes in the report.
+
+Run from repository root:
+    python src/study_planner.py
+    python src/study_planner.py --demo
+"""
+
+from __future__ import annotations
+import abc
+import argparse
+import copy
+import json
+from dataclasses import dataclass, field
+from datetime import date
+from typing import Dict, List, Optional, Tuple
 
 
-class StudyPlannerAgent:
-    def __init__(self, subjects, daily_hours, objective="Maximize coverage of high-priority topics"):
-        self.subjects = subjects
-        self.daily_hours = daily_hours
-        self.objective = objective
+class StringHelper(abc.ABC):
+    """Concrete string helper with useful behaviors for common text tasks."""
 
-    # Calculate the utility/priority score
-    def calculate_utility(self, subject):
-        today = datetime.today().date()
-        deadline = datetime.strptime(subject["deadline"], "%Y-%m-%d").date()
+    def __init__(self, value: str = ""):
+        self.value = "" if value is None else str(value)
 
-        remaining_days = (deadline - today).days
+    @property
+    def text(self) -> str:
+        return self.value
 
-        # Avoid division by zero or negative values
-        if remaining_days <= 0:
-            remaining_days = 1
+    def __str__(self) -> str:
+        return self.value
 
-        priority = subject["priority"]
-        difficulty = subject["difficulty"]
+    def __repr__(self) -> str:
+        return f"StringHelper({self.value!r})"
 
-        # Rational Agent Utility Function
-        utility = (priority * difficulty * 10) / remaining_days
+    def __len__(self) -> int:
+        return len(self.value)
 
-        return round(utility, 2)
+    def __bool__(self) -> bool:
+        return bool(self.value)
 
-    # Calculate and sort subjects according to utility
-    def prioritize_subjects(self):
-        for subject in self.subjects:
-            subject["utility"] = self.calculate_utility(subject)
+    def __contains__(self, item: object) -> bool:
+        return item in self.value
 
-        # Higher utility = higher priority
-        self.subjects.sort(
-            key=lambda x: x["utility"],
-            reverse=True
+    def __getitem__(self, index):
+        return self.value[index]
+
+    def __iter__(self):
+        return iter(self.value)
+
+    def __add__(self, other) -> str:
+        return self.value + str(other)
+
+    def __radd__(self, other) -> str:
+        return str(other) + self.value
+
+    def __mul__(self, count: int) -> str:
+        return self.value * max(0, int(count))
+
+    def __rmul__(self, count: int) -> str:
+        return self.value * max(0, int(count))
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, StringHelper):
+            return self.value == other.value
+        return self.value == str(other)
+
+    def __lt__(self, other) -> bool:
+        return self.value < str(other)
+
+    def __le__(self, other) -> bool:
+        return self.value <= str(other)
+
+    def __gt__(self, other) -> bool:
+        return self.value > str(other)
+
+    def __ge__(self, other) -> bool:
+        return self.value >= str(other)
+
+    def __ne__(self, other) -> bool:
+        if isinstance(other, StringHelper):
+            return self.value != other.value
+        return self.value != str(other)
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
+    def __format__(self, format_spec: str) -> str:
+        return format(self.value, format_spec)
+
+    def lower(self) -> str:
+        return self.value.lower()
+
+    def upper(self) -> str:
+        return self.value.upper()
+
+    def capitalize(self) -> str:
+        return self.value.capitalize()
+
+    def swapcase(self) -> str:
+        return self.value.swapcase()
+
+    def center(self, width: int, fillchar: str = " ") -> str:
+        return self.value.center(width, fillchar)
+
+    def zfill(self, width: int) -> str:
+        return self.value.zfill(width)
+
+    def encode(self, encoding: str = "utf-8", errors: str = "strict") -> bytes:
+        return self.value.encode(encoding, errors)
+
+    @classmethod
+    def from_bytes(cls, payload: bytes, encoding: str = "utf-8", errors: str = "strict") -> "StringHelper":
+        return cls(payload.decode(encoding, errors))
+
+    def casefold(self) -> str:
+        return self.value.casefold()
+
+    def count(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
+        return self.value.count(sub, start, end)
+
+    def find(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
+        return self.value.find(sub, start, end)
+
+    def index(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
+        return self.value.index(sub, start, end)
+
+    def startswith(self, prefix, start: int = 0, end: Optional[int] = None) -> bool:
+        return self.value.startswith(prefix, start, end)
+
+    def endswith(self, suffix, start: int = 0, end: Optional[int] = None) -> bool:
+        return self.value.endswith(suffix, start, end)
+
+    def isalnum(self) -> bool:
+        return self.value.isalnum()
+
+    def isalpha(self) -> bool:
+        return self.value.isalpha()
+
+    def isdigit(self) -> bool:
+        return self.value.isdigit()
+
+    def isspace(self) -> bool:
+        return self.value.isspace()
+
+    def title(self) -> str:
+        return self.value.title()
+
+    def strip(self) -> str:
+        return self.value.strip()
+
+    def lstrip(self, chars: Optional[str] = None) -> str:
+        return self.value.lstrip(chars)
+
+    def rstrip(self, chars: Optional[str] = None) -> str:
+        return self.value.rstrip(chars)
+
+    def removeprefix(self, prefix: str) -> str:
+        return self.value.removeprefix(prefix)
+
+    def removesuffix(self, suffix: str) -> str:
+        return self.value.removesuffix(suffix)
+
+    def partition(self, sep: str):
+        return self.value.partition(sep)
+
+    def rpartition(self, sep: str):
+        return self.value.rpartition(sep)
+
+    def splitlines(self, keepends: bool = False):
+        return self.value.splitlines(keepends=keepends)
+
+    def split(self, sep=None, maxsplit=-1):
+        return self.value.split(sep, maxsplit)
+
+    def replace(self, old: str, new: str, count: int = -1) -> str:
+        return self.value.replace(old, new, count)
+
+    def join(self, values) -> str:
+        return self.value.join(str(v) for v in values)
+
+    def slugify(self) -> str:
+        text = self.value.strip().lower()
+        normalized = "".join(ch if ch.isalnum() else "-" for ch in text)
+        while "--" in normalized:
+            normalized = normalized.replace("--", "-")
+        return normalized.strip("-")
+
+    def is_blank(self) -> bool:
+        return not self.value.strip()
+
+    @classmethod
+    def from_value(cls, value):
+        return cls(value)
+
+    def __copy__(self):
+        return type(self)(self.value)
+
+    def __deepcopy__(self, memo):
+        return type(self)(self.value)
+
+    def is_empty(self) -> bool:
+        return self.is_blank()
+
+Slot = Tuple[int, int]  # (day_index, session_index)
+
+
+@dataclass
+class Subject:
+    name: str
+    deadline: str
+    difficulty: int
+    weight: int
+    hours_needed: int
+    prerequisites: List[str] = field(default_factory=list)
+    completed_hours: int = 0
+
+    def __post_init__(self):
+        self.name = self.name.strip()
+        self.deadline = self.deadline.strip()
+        self.difficulty = int(self.difficulty)
+        self.weight = int(self.weight)
+        self.hours_needed = int(self.hours_needed)
+        self.completed_hours = int(self.completed_hours)
+        if not self.name:
+            raise ValueError("Subject name cannot be empty.")
+        date.fromisoformat(self.deadline)
+        if not 1 <= self.difficulty <= 5:
+            raise ValueError("Difficulty must be between 1 and 5.")
+        if not 1 <= self.weight <= 5:
+            raise ValueError("Importance/weight must be between 1 and 5.")
+        if self.hours_needed < 1:
+            raise ValueError("Required study hours must be at least 1.")
+        if not 0 <= self.completed_hours <= self.hours_needed:
+            raise ValueError("Completed hours must be between 0 and required hours.")
+        self.prerequisites = [p.strip() for p in self.prerequisites if p.strip()]
+
+    @property
+    def days_left(self) -> int:
+        return max(1, (date.fromisoformat(self.deadline) - date.today()).days)
+
+    @property
+    def remaining_hours(self) -> int:
+        return self.hours_needed - self.completed_hours
+
+    @property
+    def priority(self) -> float:
+        # Preserved from IA1: (difficulty × weight) / days_left.
+        return (self.difficulty * self.weight) / self.days_left
+
+
+class StudyPlanner:
+    def __init__(self, subjects: List[Subject], days: int = 7,
+                 sessions_per_day: int = 3):
+        self.subjects = {s.name: copy.deepcopy(s) for s in subjects}
+        if len(self.subjects) != len(subjects):
+            raise ValueError("Subject names must be unique.")
+        self.days = max(1, int(days))
+        self.sessions_per_day = max(1, int(sessions_per_day))
+        self.nodes = 0
+        self.backtracks = 0
+        self.ac3_revisions = 0
+        self._validate_knowledge()
+
+    def _validate_knowledge(self):
+        names = set(self.subjects)
+        for s in self.subjects.values():
+            missing = set(s.prerequisites) - names
+            if missing:
+                raise ValueError(f"{s.name}: unknown prerequisite(s): {', '.join(sorted(missing))}")
+            if s.name in s.prerequisites:
+                raise ValueError(f"{s.name} cannot be its own prerequisite.")
+        self._topological_order()  # also detects cycles
+
+    def _topological_order(self):
+        order, visiting, visited = [], set(), set()
+
+        def visit(name):
+            if name in visiting:
+                raise ValueError("Prerequisite cycle detected.")
+            if name in visited:
+                return
+            visiting.add(name)
+            for pre in self.subjects[name].prerequisites:
+                visit(pre)
+            visiting.remove(name)
+            visited.add(name)
+            order.append(name)
+
+        for name in self.subjects:
+            visit(name)
+        return order
+
+    def forward_chain(self):
+        """Simple rule engine with an auditable inference trace."""
+        facts = set()
+        trace = []
+        for name, subject in self.subjects.items():
+            if subject.completed_hours >= subject.hours_needed:
+                facts.add(f"completed({name})")
+                trace.append(f"FACT: completed({name}) because all required hours are complete.")
+        changed = True
+        while changed:
+            changed = False
+            for name, subject in self.subjects.items():
+                prereq_facts = [f"completed({p})" for p in subject.prerequisites]
+                if prereq_facts and all(f in facts for f in prereq_facts):
+                    fact = f"prerequisites_satisfied({name})"
+                    if fact not in facts:
+                        facts.add(fact)
+                        trace.append(
+                            f"RULE: prerequisites_satisfied({name}) because "
+                            + " AND ".join(prereq_facts) + "."
+                        )
+                        changed = True
+                elif not subject.prerequisites:
+                    fact = f"prerequisites_satisfied({name})"
+                    if fact not in facts:
+                        facts.add(fact)
+                        trace.append(f"FACT/RULE: {name} has no prerequisites.")
+                        changed = True
+        return facts, trace
+
+    def _make_variables(self):
+        variables = []
+        for name, s in self.subjects.items():
+            for hour in range(s.remaining_hours):
+                variables.append((name, hour))
+        return variables
+
+    def _initial_domains(self, variables):
+        today = date.today()
+        domains = {}
+        for variable in variables:
+            name, _ = variable
+            deadline = date.fromisoformat(self.subjects[name].deadline)
+            days_to_deadline = max(0, (deadline - today).days)
+            last_day = min(self.days - 1, days_to_deadline)
+            domains[variable] = [
+                (d, session)
+                for d in range(last_day + 1)
+                for session in range(self.sessions_per_day)
+            ]
+        return domains
+
+    def _consistent(self, variable, slot, assignment):
+        name, _ = variable
+        subject = self.subjects[name]
+        if slot in assignment.values():
+            return False
+
+        # Fairness rule: avoid consecutive sessions for the same subject on a day.
+        for (other_name, _), other_slot in assignment.items():
+            if other_name == name and other_slot[0] == slot[0]:
+                if abs(other_slot[1] - slot[1]) <= 1:
+                    return False
+
+        # Knowledge rule: prerequisite must be completed already, or scheduled
+        # in an earlier slot than the dependent subject.
+        for prerequisite in subject.prerequisites:
+            pre_subject = self.subjects[prerequisite]
+            if pre_subject.remaining_hours == 0:
+                continue
+            pre_slots = [v for (n, _), v in assignment.items() if n == prerequisite]
+            if len(pre_slots) < pre_subject.remaining_hours:
+                return False
+            if max(pre_slots) >= slot:
+                return False
+        return True
+
+    def _legal_values(self, variable, domains, assignment):
+        return [slot for slot in domains[variable]
+                if self._consistent(variable, slot, assignment)]
+
+    def _select_mrv(self, domains, assignment):
+        unassigned = [v for v in domains if v not in assignment]
+        if not unassigned:
+            return None
+        # Knowledge-aware eligibility: assign prerequisite hours before a
+        # dependent subject, so MRV does not choose a variable with zero legal
+        # values merely because its prerequisite has not been scheduled yet.
+        eligible = []
+        for variable in unassigned:
+            name = variable[0]
+            ready = True
+            for prerequisite in self.subjects[name].prerequisites:
+                required = self.subjects[prerequisite].remaining_hours
+                assigned = sum(1 for (n, _h) in assignment if n == prerequisite)
+                if assigned < required:
+                    ready = False
+                    break
+            if ready:
+                eligible.append(variable)
+        candidates = eligible or unassigned
+        return min(
+            candidates,
+            key=lambda v: (
+                len(self._legal_values(v, domains, assignment)),
+                -self.subjects[v[0]].priority,
+                v[0], v[1]
+            )
         )
 
-        return self.subjects
+    def _lcv_values(self, variable, domains, assignment):
+        # Least-constraining value: prefer the slot that removes the fewest
+        # alternatives from other unassigned variables.
+        def impact(slot):
+            return sum(
+                1 for peer in domains
+                if peer != variable and peer not in assignment and slot in domains[peer]
+            )
+        return sorted(domains[variable], key=lambda slot: (impact(slot), slot[0], slot[1]))
 
-    # Generate a weekly timetable
-    def generate_schedule(self):
-        prioritized_subjects = self.prioritize_subjects()
+    def _revise(self, xi, xj, domains):
+        # Arc consistency for the binary all-different slot constraint:
+        # if xj has one possible slot, remove it from xi's domain.
+        if len(domains[xj]) != 1:
+            return False
+        fixed = domains[xj][0]
+        if fixed in domains[xi] and len(domains[xi]) > 1:
+            domains[xi].remove(fixed)
+            return True
+        return False
 
-        schedule = {}
-        today = datetime.today().date()
+    def _ac3(self, domains, variables):
+        queue = [(xi, xj) for xi in variables for xj in variables if xi != xj]
+        while queue:
+            xi, xj = queue.pop(0)
+            if self._revise(xi, xj, domains):
+                self.ac3_revisions += 1
+                if not domains[xi]:
+                    return False
+                for xk in variables:
+                    if xk != xi and xk != xj:
+                        queue.append((xk, xi))
+        return all(domains[v] for v in variables)
 
-        for day_number in range(7):
-            current_day = today + timedelta(days=day_number)
-            remaining_hours = self.daily_hours
+    def _search(self, domains, assignment, improved=True):
+        self.nodes += 1
+        if len(assignment) == len(domains):
+            return dict(assignment)
+        variable = self._select_mrv(domains, assignment) if improved else next(
+            (v for v in domains if v not in assignment), None
+        )
+        if variable is None:
+            return None
+        values = self._lcv_values(variable, domains, assignment) if improved else list(domains[variable])
+        for slot in values:
+            if not self._consistent(variable, slot, assignment):
+                continue
+            new_assignment = dict(assignment)
+            new_assignment[variable] = slot
+            new_domains = {v: list(vals) for v, vals in domains.items()}
+            new_domains[variable] = [slot]
+            failed = False
+            for peer in new_domains:
+                if peer not in new_assignment and slot in new_domains[peer]:
+                    new_domains[peer].remove(slot)
+                    if not new_domains[peer]:
+                        failed = True
+                        break
+            if failed:
+                self.backtracks += 1
+                continue
+            remaining = [v for v in new_domains if v not in new_assignment]
+            if improved and remaining and not self._ac3(new_domains, remaining):
+                self.backtracks += 1
+                continue
+            result = self._search(new_domains, new_assignment, improved)
+            if result is not None:
+                return result
+        self.backtracks += 1
+        return None
 
-            daily_plan = []
+    def generate_timetable(self, improved=True):
+        self.nodes = self.backtracks = self.ac3_revisions = 0
+        variables = self._make_variables()
+        if not variables:
+            return {d: [] for d in range(self.days)}
+        domains = self._initial_domains(variables)
+        if any(not domain for domain in domains.values()):
+            return None
+        result = self._search(domains, {}, improved)
+        if result is None:
+            return None
+        timetable = {d: [] for d in range(self.days)}
+        for (name, hour), (day, session) in result.items():
+            timetable[day].append({
+                "session": session + 1,
+                "subject": name,
+                "hour_number": hour + 1,
+                "priority": round(self.subjects[name].priority, 2)
+            })
+        for day in timetable:
+            timetable[day].sort(key=lambda item: item["session"])
+        return timetable
 
-            # Allocate time based on priority
-            for subject in prioritized_subjects:
+    def completion_likelihood(self, subject_name):
+        s = self.subjects[subject_name]
+        available = min(self.days, max(0, (date.fromisoformat(s.deadline) - date.today()).days) + 1)
+        slots = available * self.sessions_per_day
+        if s.remaining_hours == 0:
+            probability = 1.0
+            explanation = "All required hours are marked complete."
+        else:
+            capacity = min(1.0, slots / s.remaining_hours)
+            difficulty_factor = 1 - (s.difficulty - 1) * 0.08
+            urgency_factor = min(1.0, 0.60 + s.priority / 20)
+            probability = max(0.05, min(0.98, capacity * difficulty_factor * urgency_factor))
+            explanation = (
+                f"{s.remaining_hours} hour(s) remain, {slots} possible slot(s) exist "
+                f"before the deadline, difficulty is {s.difficulty}/5, and priority is "
+                f"{s.priority:.2f}. This is a heuristic estimate, not a calibrated probability."
+            )
+        return {"percent": round(probability * 100, 1), "explanation": explanation}
 
-                if remaining_hours <= 0:
-                    break
-
-                # Higher utility subjects receive more time
-                if subject["utility"] >= 10:
-                    hours = min(2, remaining_hours)
-                elif subject["utility"] >= 5:
-                    hours = min(1.5, remaining_hours)
-                else:
-                    hours = min(1, remaining_hours)
-
-                daily_plan.append({
-                    "subject": subject["name"],
-                    "hours": hours,
-                    "utility": subject["utility"],
-                    "deadline": subject["deadline"]
-                })
-
-                remaining_hours -= hours
-
-            schedule[current_day.strftime("%A, %d-%m-%Y")] = daily_plan
-
-        return schedule
-
-    # Display timetable
-    def display_schedule(self, schedule):
-        print("\n" + "=" * 60)
-        print("          AI-BASED WEEKLY STUDY PLANNER")
-        print("=" * 60)
-
-        print(f"\nObjective: {self.objective}")
-        print(f"Available Study Hours Per Day: {self.daily_hours}\n")
-
-        for day, tasks in schedule.items():
-            print("-" * 60)
-            print(day)
-            print("-" * 60)
-
-            for task in tasks:
-                print(
-                    f"📚 {task['subject']} | "
-                    f"{task['hours']} hour(s) | "
-                    f"Utility Score: {task['utility']} | "
-                    f"Deadline: {task['deadline']}"
-                )
-
-            print()
-
-    # Explain the rational decision-making
-    def explain_reasoning(self):
-        print("\n" + "=" * 60)
-        print("WHY IS THIS AGENT RATIONAL?")
-        print("=" * 60)
-
-        print("""
-The agent follows a utility-based rational decision-making process.
-
-For every subject, it considers:
-
-1. Priority Weight
-   - Important subjects receive higher priority.
-
-2. Difficulty
-   - Difficult subjects require more preparation.
-
-3. Deadline Urgency
-   - Subjects with closer deadlines become more urgent.
-
-The utility function combines these factors:
-
-Utility = (Priority × Difficulty × 10) / Remaining Days
-
-The agent selects subjects with the highest utility scores first.
-Therefore, the generated timetable attempts to maximize the
-coverage of important and urgent subjects within the available
-daily study hours.
-""")
-
-
-# ---------------- MAIN PROGRAM ----------------
-
-subjects = []
-
-number_of_subjects = int(input("Enter the number of subjects: "))
-daily_hours = float(input("Enter available study hours per day: "))
-
-for i in range(number_of_subjects):
-    print(f"\nEnter details for Subject {i + 1}")
-
-    name = input("Subject name: ")
-    deadline = input("Deadline (YYYY-MM-DD): ")
-    difficulty = int(input("Difficulty (1 = Easy, 5 = Very Hard): "))
-    priority = int(input("Priority/Weight (1 = Low, 5 = Very High): "))
-
-    subjects.append({
-        "name": name,
-        "deadline": deadline,
-        "difficulty": difficulty,
-        "priority": priority
-    })
+    def replan_after_missed_session(self, missed_day, missed_session, completed_subjects=None):
+        """Rebuild a timetable after a missed slot; completed subjects are excluded."""
+        completed_subjects = set(completed_subjects or [])
+        remaining = [
+            copy.deepcopy(s) for name, s in self.subjects.items()
+            if name not in completed_subjects and s.remaining_hours > 0
+        ]
+        if not remaining:
+            return {"success": True, "timetable": {}, "message": "No remaining study hours."}
+        # Replanning begins from today; record missed session in the explanation.
+        revised_planner = StudyPlanner(remaining, days=self.days, sessions_per_day=self.sessions_per_day)
+        plan = revised_planner.generate_timetable(improved=True)
+        return {
+            "success": plan is not None,
+            "timetable": plan,
+            "message": (
+                f"Missed day {int(missed_day) + 1}, session {int(missed_session)}. "
+                + ("A revised timetable was generated." if plan is not None
+                   else "No feasible timetable; increase available sessions/days or revise deadlines.")
+            )
+        }
 
 
-# Create the Rational Agent
-agent = StudyPlannerAgent(
-    subjects=subjects,
-    daily_hours=daily_hours,
-    objective="Maximize coverage of urgent and high-priority topics before deadlines"
-)
+def demo_subjects():
+    today = date.today()
+    return [
+        Subject("Python", (today.replace(day=today.day)).isoformat(), 3, 5, 2),
+        Subject("Mathematics", (today.replace(day=today.day)).isoformat(), 5, 5, 2),
+        Subject("AI Basics", (today.replace(day=today.day)).isoformat(), 4, 4, 1, ["Python"]),
+    ]
 
-# Generate timetable
-weekly_schedule = agent.generate_schedule()
 
-# Display results
-agent.display_schedule(weekly_schedule)
+def make_demo_subjects():
+    from datetime import timedelta
+    today = date.today()
+    return [
+        Subject("Python", (today + timedelta(days=6)).isoformat(), 3, 5, 2),
+        Subject("Mathematics", (today + timedelta(days=4)).isoformat(), 5, 5, 2),
+        Subject("AI Basics", (today + timedelta(days=6)).isoformat(), 4, 4, 1, ["Python"]),
+        Subject("Database", (today + timedelta(days=6)).isoformat(), 2, 3, 2),
+    ]
 
-# Explain rationality
-agent.explain_reasoning() 
+
+def print_timetable(plan, days):
+    if plan is None:
+        print("No feasible timetable found. Try more sessions or later deadlines.")
+        return
+    labels = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    for day in range(days):
+        print(f"\n{labels[day] if day < 7 else f'Day {day + 1}'}:")
+        entries = plan.get(day, [])
+        if not entries:
+            print("  Free / buffer time")
+        for item in entries:
+            print(f"  Session {item['session']}: {item['subject']} "
+                  f"(priority {item['priority']})")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="IA2 Adaptive Study Planner")
+    parser.add_argument("--demo", action="store_true", help="run sample data")
+    args = parser.parse_args()
+    print("=== AI-Based Study Planner – Rational Agent (IA2) ===")
+
+    if args.demo:
+        subjects = make_demo_subjects()
+        sessions = 3
+    else:
+        count = int(input("Number of subjects: "))
+        subjects = []
+        for i in range(count):
+            print(f"\nSubject {i + 1}")
+            name = input("Subject name: ").strip()
+            deadline = input("Deadline (YYYY-MM-DD): ").strip()
+            difficulty = int(input("Difficulty (1-5): "))
+            weight = int(input("Importance/weight (1-5): "))
+            hours = int(input("Required study hours: "))
+            prereq = input("Prerequisites, comma-separated (or blank): ")
+            subjects.append(Subject(name, deadline, difficulty, weight, hours,
+                                    [p.strip() for p in prereq.split(",") if p.strip()]))
+        sessions = int(input("Study sessions available per day: "))
+
+    try:
+        planner = StudyPlanner(subjects, days=7, sessions_per_day=sessions)
+        plan = planner.generate_timetable(improved=True)
+    except ValueError as exc:
+        print(f"Input/knowledge error: {exc}")
+        return
+
+    print("\n=== CSP TIMETABLE (MRV + LCV + propagation) ===")
+    print_timetable(plan, 7)
+
+    print("\n=== KNOWLEDGE BASE / FORWARD-CHAINING TRACE ===")
+    facts, trace = planner.forward_chain()
+    for line in trace:
+        print("-", line)
+    print("Derived facts:", ", ".join(sorted(facts)) if facts else "(none yet)")
+
+    print("\n=== UNCERTAINTY / COMPLETION-LIKELIHOOD ESTIMATES ===")
+    for name in planner.subjects:
+        estimate = planner.completion_likelihood(name)
+        print(f"{name}: {estimate['percent']}%")
+        print("  Explanation:", estimate["explanation"])
+
+    print("\n=== BASELINE VS IMPROVED SEARCH ===")
+    baseline = StudyPlanner(subjects, days=7, sessions_per_day=sessions)
+    baseline_plan = baseline.generate_timetable(improved=False)
+    improved = StudyPlanner(subjects, days=7, sessions_per_day=sessions)
+    improved_plan = improved.generate_timetable(improved=True)
+    print(f"Plain backtracking: {'success' if baseline_plan is not None else 'no solution'}, "
+          f"nodes={baseline.nodes}, backtracks={baseline.backtracks}")
+    print(f"MRV + LCV + forward checking + AC-3: "
+          f"{'success' if improved_plan is not None else 'no solution'}, "
+          f"nodes={improved.nodes}, backtracks={improved.backtracks}, "
+          f"AC-3 revisions={improved.ac3_revisions}")
+
+    print("\n=== ADAPTIVE REPLANNING DEMO ===")
+    revised = planner.replan_after_missed_session(0, 1)
+    print(revised["message"])
+    if revised["success"]:
+        print_timetable(revised["timetable"], 7)
+
+    print("\n=== RESPONSIBLE AI NOTE ===")
+    print("Explanations show priority, deadline, difficulty, and remaining workload.")
+    print("Review recommendations yourself; the score may reflect inaccurate inputs.")
+    print("Avoid entering private student identifiers or sensitive personal information.")
+
+
+if __name__ == "__main__":
+    main() 
